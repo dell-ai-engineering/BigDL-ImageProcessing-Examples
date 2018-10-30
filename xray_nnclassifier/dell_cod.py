@@ -30,7 +30,6 @@ def get_auc_for_kth_class(k, df, label_col="label", prediction_col="prediction")
                                               metricName="areaUnderROC") \
         .evaluate(extracted_df)
 
-    print('roc score for ', k, ' class: ', roc_score)
     return roc_score
 
 
@@ -46,7 +45,30 @@ def get_inception_model(model_path, label_length):
 
 def get_resnet_model(model_path, label_length):
     full_model = Net.load_bigdl(model_path)
-    model = full_model.new_graph(["pool5"])  # this inception
+    model = full_model.new_graph(["pool5"])
+    print(('num of model layers: ', len(model.layers)))
+    inputNode = Input(name="input", shape=(3, 224, 224))
+    inception = model.to_keras()(inputNode)
+    flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
+    logits = Dense(label_length, activation="sigmoid")(flatten)
+    lrModel = Model(inputNode, logits)
+    return lrModel
+
+
+def get_vgg_model(model_path, label_length):
+    full_model = Net.load_bigdl(model_path)
+    model = full_model.new_graph(["pool5"])
+    print(('num of model layers: ', len(model.layers)))
+    inputNode = Input(name="input", shape=(3, 224, 224))
+    inception = model.to_keras()(inputNode)
+    flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
+    logits = Dense(label_length, activation="sigmoid")(flatten)
+    lrModel = Model(inputNode, logits)
+    return lrModel
+
+def get_densenet_model(model_path, label_length):
+    full_model = Net.load_bigdl(model_path)
+    model = full_model.new_graph(["pool5"])
     print(('num of model layers: ', len(model.layers)))
     inputNode = Input(name="input", shape=(3, 224, 224))
     inception = model.to_keras()(inputNode)
@@ -71,15 +93,13 @@ if __name__ == "__main__":
     spark = SparkSession.builder.config(conf=sparkConf).getOrCreate()
     print(sc.master)
 
-    xray_model = get_resnet_model(model_path, label_length)
+    xray_model = get_inception_model(model_path, label_length)
 
     sliceLabel = udf(lambda x: x[:label_length], ArrayType(DoubleType()))
     train_df = spark.read.load(image_path).withColumn("part_label", sliceLabel(col('label')))
     (trainingDF, validationDF) = train_df.randomSplit([0.7, 0.3])
     trainingDF.cache()
     validationDF.cache()
-    print("training df count: ", trainingDF.count())
-
     #logdir ='/logDirectory'
     # train_summary = TrainSummary(log_dir="./logs", app_name="testNNClassifer")
     # val_summary = ValidationSummary(log_dir="./logs", app_name="testNNClassifer")
@@ -91,16 +111,19 @@ if __name__ == "__main__":
          ImageChannelNormalize(123.68, 116.779, 103.939), ImageMatToTensor(), ImageFeatureToTensor()])
 
     classifier = NNEstimator(xray_model, BinaryCrossEntropy(), transformer, SeqToTensor([label_length])) \
-        .setBatchSize(batch_size)\
+        .setBatchSize(batch_size) \
         .setMaxEpoch(num_epoch) \
         .setFeaturesCol("image")\
         .setLabelCol("part_label") \
-        .setOptimMethod(SGD(learningrate=0.001, leaningrate_schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15))) \
-        .setCachingSample(False)\
+        .setOptimMethod(Adam(learningrate=0.001, learningrate_decay=1e-5)) \
+        .setCachingSample(False) \
+        # .setEndWhen(MaxIteration(1))
+        #\
+        # .setOptimMethod(SGD(learningrate=0.001, leaningrate_schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15))) \
         # .setValidation(EveryEpoch(), validationDF, [AUC()], batch_size)\
-         # .setTrainSummary(train_summary) \
-         # .setValidationSummary(val_summary) \
-         # .setCheckpoint("./checkpoints", EveryEpoch(), False)
+        # .setTrainSummary(train_summary) \
+        # .setValidationSummary(val_summary) \
+        # .setCheckpoint("./checkpoints", EveryEpoch(), False)
 
     start = time.time()
     nnModel = classifier.fit(trainingDF)
@@ -109,10 +132,21 @@ if __name__ == "__main__":
     model_path = save_path + '/xray_model_' + time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
     nnModel.save(model_path)
     print('model saved at: ', model_path)
+    trainingDF.unpersist(True)
     predictionDF = nnModel.transform(validationDF).cache()
 
-    for i in range(0, label_length):
-        get_auc_for_kth_class(i, predictionDF)
+    label_texts = list(
+        """Atelectasis, Consolidation, Infiltration, Pneumothorax, Edema, Emphysema, Fibrosis, Effusion, Pneumonia, Pleural_Thickening, Cardiomegaly, Nodule, Mass, Hernia, No Finding""".replace(
+            "\n", "").split(", "))
+    label_map = {k: v for v, k in enumerate(label_texts)}
+    chexnet_order = ["Atelectasis", "Cardiomegaly", "Effusion", "Infiltration", "Mass", "Nodule", "Pneumonia", "Pneumothorax", "Consolidation",
+     "Edema", "Emphysema", "Fibrosis", "Pleural_Thickening", "Hernia"]
 
-    print("Finished evaluation")
+    total_auc = 0.0
+    for d in chexnet_order:
+        roc_score = get_auc_for_kth_class(label_map[d], predictionDF)
+        total_auc += roc_score
+        print('{:>12} {:>25} {:>5} {:<20}'.format('roc score for ', d, ' is: ', roc_score))
+
+    print("Finished evaluation, average auc: ", total_auc / float(label_length))
 
