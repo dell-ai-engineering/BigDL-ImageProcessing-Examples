@@ -7,7 +7,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, udf
 from pyspark.sql.types import *
 from pyspark.sql.types import DoubleType
-from pyspark.sql.types import StringType, ArrayType
+from pyspark.storagelevel import StorageLevel
 from zoo.common.nncontext import *
 from zoo.feature.image.imagePreprocessing import *
 from zoo.pipeline.api.keras.layers import Input, Flatten, Dense, GlobalAveragePooling2D
@@ -43,6 +43,7 @@ def get_inception_model(model_path, label_length):
     lrModel = Model(inputNode, logits)
     return lrModel
 
+
 def get_resnet_model(model_path, label_length):
     full_model = Net.load_bigdl(model_path)
     model = full_model.new_graph(["pool5"])
@@ -66,6 +67,7 @@ def get_vgg_model(model_path, label_length):
     lrModel = Model(inputNode, logits)
     return lrModel
 
+
 def get_densenet_model(model_path, label_length):
     full_model = Net.load_bigdl(model_path)
     model = full_model.new_graph(["pool5"])
@@ -76,6 +78,7 @@ def get_densenet_model(model_path, label_length):
     logits = Dense(label_length, activation="sigmoid")(flatten)
     lrModel = Model(inputNode, logits)
     return lrModel
+
 
 if __name__ == "__main__":
     random.seed(1234)
@@ -93,12 +96,10 @@ if __name__ == "__main__":
     spark = SparkSession.builder.config(conf=sparkConf).getOrCreate()
     print(sc.master)
 
-    xray_model = get_inception_model(model_path, label_length)
+    xray_model = get_resnet_model(model_path, label_length)
 
-    sliceLabel = udf(lambda x: x[:label_length], ArrayType(DoubleType()))
-    train_df = spark.read.load(image_path).withColumn("part_label", sliceLabel(col('label')))
-    (trainingDF, validationDF) = train_df.randomSplit([0.7, 0.3])
-    trainingDF.cache()
+    train_df = spark.read.load(image_path).cache()
+    (trainingDF, validationDF) = train_df.randomSplit([0.7, 0.3], seed=37)
     validationDF.cache()
     #logdir ='/logDirectory'
     # train_summary = TrainSummary(log_dir="./logs", app_name="testNNClassifer")
@@ -107,20 +108,22 @@ if __name__ == "__main__":
     # train_summary.set_summary_trigger("LearningRate", SeveralIteration(1))
 
     transformer = ChainedPreprocessing(
-        [RowToImageFeature(), ImageCenterCrop(224, 224),
+        [RowToImageFeature(), ImageCenterCrop(224, 224), ImageRandomPreprocessing(ImageHFlip(), 0.5),
          ImageChannelNormalize(123.68, 116.779, 103.939), ImageMatToTensor(), ImageFeatureToTensor()])
 
-    classifier = NNEstimator(xray_model, BinaryCrossEntropy(), transformer, SeqToTensor([label_length])) \
+    classifier = NNEstimator(xray_model, BinaryCrossEntropy(), transformer) \
         .setBatchSize(batch_size) \
-        .setMaxEpoch(num_epoch) \
-        .setFeaturesCol("image")\
+        .setEndWhen(MaxScore(0.6)) \
+        .setFeaturesCol("image") \
         .setLabelCol("part_label") \
-        .setOptimMethod(Adam(learningrate=0.001, learningrate_decay=1e-5)) \
+        .setOptimMethod(Adam()) \
+        .setLearningRate(1e-3) \
+        .setLearningRateDecay(0.1) \
         .setCachingSample(False) \
+        .setValidation(SeveralIteration(5), validationDF, [AUC()], batch_size) \
+        # .setLearningRate(1e-1)
         # .setEndWhen(MaxIteration(1))
-        #\
         # .setOptimMethod(SGD(learningrate=0.001, leaningrate_schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15))) \
-        # .setValidation(EveryEpoch(), validationDF, [AUC()], batch_size)\
         # .setTrainSummary(train_summary) \
         # .setValidationSummary(val_summary) \
         # .setCheckpoint("./checkpoints", EveryEpoch(), False)
@@ -132,21 +135,16 @@ if __name__ == "__main__":
     model_path = save_path + '/xray_model_' + time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
     nnModel.save(model_path)
     print('model saved at: ', model_path)
-    trainingDF.unpersist(True)
-    predictionDF = nnModel.transform(validationDF).cache()
+    predictionDF = nnModel.transform(validationDF).persist(storageLevel=StorageLevel.MEMORY_AND_DISK)
 
-    label_texts = list(
-        """Atelectasis, Consolidation, Infiltration, Pneumothorax, Edema, Emphysema, Fibrosis, Effusion, Pneumonia, Pleural_Thickening, Cardiomegaly, Nodule, Mass, Hernia, No Finding""".replace(
-            "\n", "").split(", "))
-    label_map = {k: v for v, k in enumerate(label_texts)}
-    chexnet_order = ["Atelectasis", "Cardiomegaly", "Effusion", "Infiltration", "Mass", "Nodule", "Pneumonia", "Pneumothorax", "Consolidation",
-     "Edema", "Emphysema", "Fibrosis", "Pleural_Thickening", "Hernia"]
-
+    label_texts = ["Atelectasis", "Cardiomegaly", "Effusion", "Infiltration", "Mass", "Nodule", "Pneumonia",
+                   "Pneumothorax", "Consolidation",
+                   "Edema", "Emphysema", "Fibrosis", "Pleural_Thickening", "Hernia", "No Finding"]
     total_auc = 0.0
-    for d in chexnet_order:
-        roc_score = get_auc_for_kth_class(label_map[d], predictionDF)
+    for i in range(label_length):
+        roc_score = get_auc_for_kth_class(i, predictionDF, "part_label")
         total_auc += roc_score
-        print('{:>12} {:>25} {:>5} {:<20}'.format('roc score for ', d, ' is: ', roc_score))
+        print('{:>12} {:>25} {:>5} {:<20}'.format('roc score for ', label_texts[i], ' is: ', roc_score))
 
     print("Finished evaluation, average auc: ", total_auc / float(label_length))
 

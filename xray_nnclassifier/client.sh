@@ -6,8 +6,8 @@ PYSPARK_DRIVER_PYTHON=${VENV_HOME}/venv/bin/python PYSPARK_PYTHON=venv.zip/venv/
 --deploy-mode client \
 --executor-memory 170g \
 --driver-memory 170g \
---executor-cores 10 \
+--executor-cores 4 \
 --num-executors 4 \
 --archives ${VENV_HOME}/venv.zip \
-xray_test.py 320 2 analytics-zoo_resnet-50_imagenet_0.1.0.model \
-hdfs://Gondolin-Node-071:9000/imageDF /root/save_models
+xray_test.py 256 5 analytics-zoo_resnet-50_imagenet_0.1.0.model \
+hdfs://Gondolin-Node-071:9000/imageDF3 /root/save_models
