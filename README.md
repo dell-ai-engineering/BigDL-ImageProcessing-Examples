@@ -15,3 +15,6 @@ The AUC is calculated for all 15 classes
 The last step is calculating and plotting AUC for all 15 classes. 
 
 
+### How to imporve your AUC 
+here is a good reference to follow in order to increase the accuracy 
+https://machinelearningmastery.com/improve-deep-learning-performance/
