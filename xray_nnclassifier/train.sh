@@ -18,7 +18,7 @@ $ANALYTICS_ZOO_HOME/bin/spark-submit-with-zoo.sh \
 --master local[1] \
 --driver-memory 15g \
 train.py \
-4 20 /home/yuhao/workspace/model/analytics-zoo_resnet-50_imagenet_0.1.0.model \
+4 10 /home/yuhao/workspace/model/analytics-zoo_resnet-50_imagenet_0.1.0.model \
 /home/yuhao/workspace/github/hhbyyh/BigDL-ImageProcessing-Examples/xray_nnclassifier/imageDF \
 /home/yuhao/workspace/github/hhbyyh/BigDL-ImageProcessing-Examples/xray_nnclassifier/save_model
 
