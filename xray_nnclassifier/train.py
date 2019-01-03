@@ -2,7 +2,8 @@ import random
 import time
 
 from math import ceil
-from bigdl.optim.optimizer import SGD, SequentialSchedule, Warmup, Poly, Plateau, EveryEpoch
+from bigdl.optim.optimizer import SGD, SequentialSchedule, Warmup, Poly, Plateau, EveryEpoch, TrainSummary,\
+    ValidationSummary, SeveralIteration, Step
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 from pyspark.sql import SparkSession, SQLContext
 from pyspark.sql.functions import col, udf
@@ -12,7 +13,8 @@ from zoo.common.nncontext import *
 from zoo.feature.image.imagePreprocessing import *
 from zoo.feature.common import ChainedPreprocessing
 from zoo.pipeline.api.keras.layers import Input, Flatten, Dense, GlobalAveragePooling2D
-from zoo.pipeline.api.keras.metrics import AUC, AdamWithSchedule
+from zoo.pipeline.api.keras.metrics import AUC
+from zoo.pipeline.api.keras.optimizers import Adam
 from zoo.pipeline.api.keras.models import Model
 from zoo.pipeline.api.net import Net
 from zoo.pipeline.nnframes import NNEstimator
@@ -69,25 +71,27 @@ def get_densenet_model(model_path, label_length):
 def get_sgd_optimMethod(num_epoch, trainingCount, batchSize):
     iterationPerEpoch = int(ceil(float(trainingCount) / batchSize))
     maxIteration = num_epoch * iterationPerEpoch
-    warmup_iteration = 10 * iterationPerEpoch
+    warmupEpoch = 10
+    warmup_iteration = warmupEpoch * iterationPerEpoch
     init_lr = 1e-6
     maxlr = 0.001 * batch_size / 8
     print("peak lr is: ", maxlr)
     warmupDelta = (maxlr - init_lr) / warmup_iteration
-    polyIteration = (num_epoch - 10) * iterationPerEpoch
+    cooldownIteration = (num_epoch - warmupEpoch) * iterationPerEpoch
 
     lrSchedule = SequentialSchedule(iterationPerEpoch)
     lrSchedule.add(Warmup(warmupDelta), warmup_iteration)
-    lrSchedule.add(Poly(0.5, maxIteration), polyIteration)
-    optim = SGD(learningrate=init_lr, momentum=0.9, dampening=0.0, nesterov=False,
+    #lrSchedule.add(Step(iterationPerEpoch * 10, 0.1), cooldownIteration)
+    lrSchedule.add(Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15), cooldownIteration)
+    optim = SGD(learningrate=init_lr, momentum=0.9, dampening=0.0, nesterov=True,
                 leaningrate_schedule=lrSchedule)
     return optim
 
 
 def get_adam_optimMethod():
-    return AdamWithSchedule(learningrate=0.001,
-                            leaningrate_schedule=Plateau("Loss", factor=0.1, patience=2, mode="min", epsilon=0.01,
-                                                         cooldown=0, min_lr=1e-15))
+    return Adam(lr=0.001,
+                schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01,
+                                             cooldown=0, min_lr=1e-15))
 
 def get_auc_for_kth_class(k, df, label_col="label", prediction_col="prediction"):
     get_Kth = udf(lambda a: a[k], DoubleType())
@@ -120,12 +124,19 @@ if __name__ == "__main__":
 
     xray_model = get_resnet_model(model_path, label_length)
     train_df = spark.read.load(data_path + '/trainingDF')
-    (trainingDF, validationDF) = train_df.randomSplit([0.875, 0.125])
+    split_id = '00000040_000.png'  #00026868_000.png
+    trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
+    validationDF = train_df.filter(train_df["Image_Index"] >= split_id)
     trainingCount = trainingDF.count()
 
     transformer = ChainedPreprocessing(
-        [RowToImageFeature(), ImageCenterCrop(224, 224), ImageRandomPreprocessing(ImageHFlip(), 0.5),
+        [RowToImageFeature(), ImageRandomPreprocessing(ImageHFlip(), 0.5),
          ImageChannelNormalize(123.68, 116.779, 103.939), ImageMatToTensor(), ImageFeatureToTensor()])
+
+    train_summary = TrainSummary(log_dir="./logs", app_name="test_dell_x_ray")
+    val_summary = ValidationSummary(log_dir="./logs", app_name="test_dell_x_ray")
+    train_summary.set_summary_trigger("LearningRate", SeveralIteration(1))
+    train_summary.set_summary_trigger("Loss", SeveralIteration(1))
 
     classifier = NNEstimator(xray_model, BinaryCrossEntropy(), transformer) \
         .setBatchSize(batch_size) \
@@ -133,21 +144,25 @@ if __name__ == "__main__":
         .setFeaturesCol("image") \
         .setCachingSample(False) \
         .setValidation(EveryEpoch(), validationDF, [AUC()], batch_size) \
+        .setTrainSummary(train_summary) \
+        .setValidationSummary(val_summary) \
         .setOptimMethod(get_adam_optimMethod())
 
+        # .setOptimMethod(get_adam_optimMethod())
         # .setOptimMethod(get_sgd_optimMethod(num_epoch, trainingCount, batch_size))
         # .setLearningRate(1e-1)
         # .setEndWhen(MaxIteration(1))
         # .setOptimMethod(SGD(learningrate=0.001, leaningrate_schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15))) \
-        # .setTrainSummary(train_summary) \
-        # .setValidationSummary(val_summary) \
         # .setCheckpoint("./checkpoints", EveryEpoch(), False)
 
     start = time.time()
     nnModel = classifier.fit(trainingDF)
     print("Finished training, took: ", time.time() - start)
-    SQLContext(sc).clearCache()
 
+    model_path = save_path + '/xray_model_' + time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
+    nnModel.model.saveModel(model_path + ".bigdl", model_path + ".bin", True)
+    print('model saved at: ', model_path)
+    SQLContext(sc).clearCache()
 
     testDF = spark.read.load(data_path + '/testDF')
     predictionDF = nnModel.transform(testDF).persist(storageLevel=StorageLevel.DISK_ONLY)
@@ -175,3 +190,4 @@ if __name__ == "__main__":
     # val_summary = ValidationSummary(log_dir="./logs", app_name="testNNClassifer")
     # train_summary.set_summary_trigger("Parameters", SeveralIteration(1))
     # train_summary.set_summary_trigger("LearningRate", SeveralIteration(1))
+
