@@ -90,21 +90,25 @@ def get_sgd_optimMethod(num_epoch, trainingCount, batchSize):
 
 
 def get_adam_optimMethod(num_epoch, trainingCount, batchSize):
-    iterationPerEpoch = int(ceil(float(trainingCount) / batchSize))
-    warmupEpoch = 5
-    warmup_iteration = warmupEpoch * iterationPerEpoch
-    init_lr = 1e-7
-    maxlr = 0.001
-    print("peak lr is: ", maxlr)
-    warmupDelta = (maxlr - init_lr) / warmup_iteration
-    cooldownIteration = (num_epoch - warmupEpoch) * iterationPerEpoch
 
-    lrSchedule = SequentialSchedule(iterationPerEpoch)
-    lrSchedule.add(Warmup(warmupDelta), warmup_iteration)
-    lrSchedule.add(Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15),
-                   cooldownIteration)
-    optim = Adam(lr=init_lr, schedule=lrSchedule)
-    return optim
+    return Adam(lr=0.001, schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01,
+                                                         cooldown=0, min_lr=1e-15))
+
+    # iterationPerEpoch = int(ceil(float(trainingCount) / batchSize))
+    # warmupEpoch = 5
+    # warmup_iteration = warmupEpoch * iterationPerEpoch
+    # init_lr = 1e-7
+    # maxlr = 0.001
+    # print("peak lr is: ", maxlr)
+    # warmupDelta = (maxlr - init_lr) / warmup_iteration
+    # cooldownIteration = (num_epoch - warmupEpoch) * iterationPerEpoch
+    #
+    # lrSchedule = SequentialSchedule(iterationPerEpoch)
+    # lrSchedule.add(Warmup(warmupDelta), warmup_iteration)
+    # lrSchedule.add(Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15),
+    #                cooldownIteration)
+    # optim = Adam(lr=init_lr, schedule=lrSchedule)
+    # return optim
 
 
 def evaluate(testDF):
