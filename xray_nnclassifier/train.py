@@ -3,7 +3,7 @@ import time
 
 from math import ceil
 from bigdl.optim.optimizer import SGD, SequentialSchedule, Warmup, Poly, Plateau, EveryEpoch, TrainSummary,\
-    ValidationSummary, SeveralIteration, Step, L2Regularizer
+    ValidationSummary, SeveralIteration, Step
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 from pyspark.sql import SparkSession, SQLContext
 from pyspark.sql.functions import col, udf
@@ -39,8 +39,8 @@ def get_resnet_model(model_path, label_length):
     inputNode = Input(name="input", shape=(3, 224, 224))
     inception = model.to_keras()(inputNode)
     flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
-    dropout = Dropout(0.25)(flatten)
-    logits = Dense(label_length, W_regularizer=L2Regularizer(1e-1), b_regularizer=L2Regularizer(1e-1), activation="sigmoid")(dropout)
+    dropout = Dropout(0.1)(flatten)
+    logits = Dense(label_length, activation="sigmoid")(dropout)
     lrModel = Model(inputNode, logits)
     return lrModel
 
@@ -90,21 +90,25 @@ def get_sgd_optimMethod(num_epoch, trainingCount, batchSize):
 
 
 def get_adam_optimMethod(num_epoch, trainingCount, batchSize):
-    iterationPerEpoch = int(ceil(float(trainingCount) / batchSize))
-    warmupEpoch = 5
-    warmup_iteration = warmupEpoch * iterationPerEpoch
-    init_lr = 1e-7
-    maxlr = 0.0001
-    print("peak lr is: ", maxlr)
-    warmupDelta = (maxlr - init_lr) / warmup_iteration
-    cooldownIteration = (num_epoch - warmupEpoch) * iterationPerEpoch
 
-    lrSchedule = SequentialSchedule(iterationPerEpoch)
-    lrSchedule.add(Warmup(warmupDelta), warmup_iteration)
-    lrSchedule.add(Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15),
-                   cooldownIteration)
-    optim = Adam(lr=init_lr, schedule=lrSchedule)
-    return optim
+    return Adam(lr=0.001, schedule=Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01,
+                                                         cooldown=0, min_lr=1e-15))
+
+    # iterationPerEpoch = int(ceil(float(trainingCount) / batchSize))
+    # warmupEpoch = 5
+    # warmup_iteration = warmupEpoch * iterationPerEpoch
+    # init_lr = 1e-7
+    # maxlr = 0.001
+    # print("peak lr is: ", maxlr)
+    # warmupDelta = (maxlr - init_lr) / warmup_iteration
+    # cooldownIteration = (num_epoch - warmupEpoch) * iterationPerEpoch
+    #
+    # lrSchedule = SequentialSchedule(iterationPerEpoch)
+    # lrSchedule.add(Warmup(warmupDelta), warmup_iteration)
+    # lrSchedule.add(Plateau("Loss", factor=0.1, patience=1, mode="min", epsilon=0.01, cooldown=0, min_lr=1e-15),
+    #                cooldownIteration)
+    # optim = Adam(lr=init_lr, schedule=lrSchedule)
+    # return optim
 
 
 def evaluate(testDF):
@@ -119,12 +123,6 @@ def evaluate(testDF):
         print('{:>12} {:>25} {:>5} {:<20}'.format('roc score for ', label_texts[i], ' is: ', roc_score))
 
     print("Finished evaluation, average auc: ", total_auc / float(label_length))
-
-def straightifiedSampling(df, kth, ratios, label_col="label"):
-    get_Kth = udf(lambda a: a[kth], DoubleType())
-    extracted_df = df.withColumn("kth_label", get_Kth(col(label_col))) \
-        .sampleBy("kth_label", fractions=ratios, seed=42)
-    extracted_df.groupBy("kth_label").count().orderBy("kth_label").show()
 
 
 def get_auc_for_kth_class(k, df, label_col="label", prediction_col="prediction"):
@@ -159,17 +157,15 @@ if __name__ == "__main__":
 
     xray_model = get_resnet_model(model_path, label_length)
     train_df = spark.read.load(data_path + '/trainingDF')
-    split_id = '00024779_000.png' #'00000040_000.png'
+    split_id = '00000040_000.png'  #'00024779_000.png'
     trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
     validationDF = train_df.filter(train_df["Image_Index"] >= split_id)
     trainingCount = trainingDF.count()
     print("num of training images: ", trainingCount)
     print("num of validation images: ", validationDF.count())
 
-    # straightifiedSampling(trainingDF, 1, {0.0: 0.1, 1.0: 1})
     transformer = ChainedPreprocessing(
         [RowToImageFeature(), ImageCenterCrop(224, 224), ImageRandomPreprocessing(ImageHFlip(), 0.5),
-         ImageRandomPreprocessing(ImageBrightness(0.0, 32.0), 0.5),
          ImageChannelNormalize(123.68, 116.779, 103.939), ImageMatToTensor(), ImageFeatureToTensor()])
 
     train_summary = TrainSummary(log_dir="./logs", app_name="test_dell_x_ray")
