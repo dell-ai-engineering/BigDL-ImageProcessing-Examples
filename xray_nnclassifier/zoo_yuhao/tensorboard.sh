@@ -1,0 +1,1 @@
+tensorboard --logdir=/home/yuhao/workspace/github/hhbyyh/BigDL-ImageProcessing-Examples/xray_nnclassifier/zoo_yuhao/logs/test_dell_x_ray
