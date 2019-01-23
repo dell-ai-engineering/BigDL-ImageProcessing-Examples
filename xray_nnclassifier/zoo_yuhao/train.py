@@ -159,9 +159,9 @@ if __name__ == "__main__":
 
     xray_model = get_resnet_model(model_path, label_length)
     train_df = spark.read.load(data_path + '/trainingDF')
-    split_id = '00000040_000.png' #'00024779_000.png' #
-    trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
-    validationDF = train_df.filter(train_df["Image_Index"] >= split_id)
+    testDF = spark.read.load(data_path + '/testDF')
+    totalDF =train_df.union(testDF)
+    (trainingDF, validationDF) = totalDF.randomSplit([0.7, 0.3])
     trainingCount = trainingDF.count()
     print("num of training images: ", trainingCount)
     print("num of validation images: ", validationDF.count())
@@ -205,7 +205,6 @@ if __name__ == "__main__":
     SQLContext(sc).clearCache()
 
     print("\nevaluating on test data: ")
-    testDF = spark.read.load(data_path + '/testDF')
     evaluate(testDF)
 
 
@@ -222,3 +221,6 @@ if __name__ == "__main__":
     # train_summary.set_summary_trigger("Parameters", SeveralIteration(1))
     # train_summary.set_summary_trigger("LearningRate", SeveralIteration(1))
 
+    # split_id = '00000040_000.png' #'00024779_000.png' #
+    # trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
+    # validationDF = train_df.filter(train_df["Image_Index"] >= split_id)
