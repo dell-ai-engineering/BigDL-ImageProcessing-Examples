@@ -1,3 +1,6 @@
+export ANALYTICS_ZOO_HOME=/home/yuhao/workspace/github/hhbyyh/analytics-zoo/dist
+export SPARK_HOME=/home/yuhao/workspace/lib/spark-2.1.1-bin-hadoop2.7
+
 ${ANALYTICS_ZOO_HOME}/bin/spark-submit-with-zoo.sh \
 --master local[1] \
 --driver-memory 10g \

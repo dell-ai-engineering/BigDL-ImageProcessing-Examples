@@ -26,8 +26,9 @@ def get_inception_model(model_path, label_length):
     model = full_model.new_graph(["pool5/drop_7x7_s1"])  # this inception
     inputNode = Input(name="input", shape=(3, 224, 224))
     inception = model.to_keras()(inputNode)
-    flatten = Flatten()(inception)
-    logits = Dense(label_length, activation="sigmoid")(flatten)
+    flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
+    dropout = Dropout(0.25)(flatten)
+    logits = Dense(label_length, W_regularizer=L2Regularizer(1e-1), b_regularizer=L2Regularizer(1e-1), activation="sigmoid")(dropout)
     lrModel = Model(inputNode, logits)
     return lrModel
 
@@ -52,7 +53,8 @@ def get_vgg_model(model_path, label_length):
     inputNode = Input(name="input", shape=(3, 224, 224))
     inception = model.to_keras()(inputNode)
     flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
-    logits = Dense(label_length, activation="sigmoid")(flatten)
+    dropout = Dropout(0.25)(flatten)
+    logits = Dense(label_length, W_regularizer=L2Regularizer(1e-1), b_regularizer=L2Regularizer(1e-1), activation="sigmoid")(dropout)
     lrModel = Model(inputNode, logits)
     return lrModel
 
@@ -64,7 +66,8 @@ def get_densenet_model(model_path, label_length):
     inputNode = Input(name="input", shape=(3, 224, 224))
     inception = model.to_keras()(inputNode)
     flatten = GlobalAveragePooling2D(dim_ordering='th')(inception)
-    logits = Dense(label_length, activation="sigmoid")(flatten)
+    dropout = Dropout(0.25)(flatten)
+    logits = Dense(label_length, W_regularizer=L2Regularizer(1e-1), b_regularizer=L2Regularizer(1e-1), activation="sigmoid")(dropout)
     lrModel = Model(inputNode, logits)
     return lrModel
 
@@ -159,9 +162,9 @@ if __name__ == "__main__":
 
     xray_model = get_resnet_model(model_path, label_length)
     train_df = spark.read.load(data_path + '/trainingDF')
-    split_id = '00000040_000.png' #'00024779_000.png' #
-    trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
-    validationDF = train_df.filter(train_df["Image_Index"] >= split_id)
+    testDF = spark.read.load(data_path + '/testDF')
+    totalDF =train_df.union(testDF)
+    (trainingDF, validationDF) = totalDF.randomSplit([0.7, 0.3])
     trainingCount = trainingDF.count()
     print("num of training images: ", trainingCount)
     print("num of validation images: ", validationDF.count())
@@ -189,9 +192,6 @@ if __name__ == "__main__":
         .setValidationSummary(val_summary) \
         .setOptimMethod(optim_method)
 
-        # .setEndWhen(MaxIteration(1))
-        # .setCheckpoint("./checkpoints", EveryEpoch(), False)
-
     start = time.time()
     nnModel = classifier.fit(trainingDF)
     print("Finished training, took: ", time.time() - start)
@@ -205,8 +205,7 @@ if __name__ == "__main__":
     SQLContext(sc).clearCache()
 
     print("\nevaluating on test data: ")
-    testDF = spark.read.load(data_path + '/testDF')
-    evaluate(testDF)
+    evaluate(validationDF)
 
 
     # nnModel.model.to_model().saveModel("/home/yuhao/workspace/github/hhbyyh/BigDL-ImageProcessing-Examples/xray_nnclassifier/kerasModel/m.bigdl",
@@ -222,3 +221,6 @@ if __name__ == "__main__":
     # train_summary.set_summary_trigger("Parameters", SeveralIteration(1))
     # train_summary.set_summary_trigger("LearningRate", SeveralIteration(1))
 
+    # split_id = '00000040_000.png' #'00024779_000.png' #
+    # trainingDF = train_df.filter(train_df["Image_Index"] < split_id)
+    # validationDF = train_df.filter(train_df["Image_Index"] >= split_id)

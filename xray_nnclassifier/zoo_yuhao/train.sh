@@ -14,6 +14,9 @@
 # hdfs://Gondolin-Node-058:9000/imageDF1 /root/save_models > log.output 2>&1 &
 
 
+export ANALYTICS_ZOO_HOME=/home/yuhao/workspace/github/hhbyyh/analytics-zoo/dist
+export SPARK_HOME=/home/yuhao/workspace/lib/spark-2.1.1-bin-hadoop2.7
+
 $ANALYTICS_ZOO_HOME/bin/spark-submit-with-zoo.sh \
 --master local[1] \
 --driver-memory 15g \
