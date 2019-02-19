@@ -1,20 +1,52 @@
-### Deep Learning Image Processing Example with Chest Xrays using Analytics Zoo  
-The code utilized transfer learning with Inception or Resnet-50 to train with Chest X-ray images form 
-https://www.kaggle.com/nih-chest-xrays/data
-The dataset has 112,000 Chest X-ray gray scale images from more than 30,000 unique patients. Each x-ray may contains one or more diseases (labels) which make the problem as multiple classes and multiple labels problem. The images are gray scale with 2 channels. In order to fit with ResNet-50  all these images must be in 3 channels and fed as BGR to the ResNet-50. The dataset is divided into train and test folder and saved in HDFS and their labels are save in CSV file which is called Data_Entry_2017.csv. This CSV files contains the labels ( image index and finding ) and randomly stored. Thus, in order to get the right label for right image two sql dataframes must be created and inner joined based on the image index columns in both dataframe. 
-After all images and their labels formulated in one dataframe , preprocessing phase is done 
-### Preprocessing 
-In this phase the dataframe is splited  into training  and validation dataframes  then  all images are resized to 224, 224 , 3 and randomly horizontally  flipped, image channels are normalized by subtracting ImageNet means from each image channels,  and images are converted into tensor   where this done in transformer
-### Model creation 
-Resnet50 pretrained model is loaded and the last layer is chopped then adding an new flatten layer with 15 classes. As this problem is multiple classes and multiple labels the last activation function which is used is sigmoid function. 
-### Model training and validation 
-The model is trained with train dataframe and validate with validation data farme .
-### Area Under Curve calculation 
-The AUC is calculated for all 15 classes 
-### Micro and Macro average 
-The last step is calculating and plotting AUC for all 15 classes. 
+## Summary
+In this notebook, the transfer learning is utilized to predict common Thorax Disease Categories in chest X-ray which is freely available by NIH(National Institutes of Health). Download the dataset by click [here](http://academictorrents.com/details/557481faacd824c83fbf57dcf7b6da9383b3235a). The dataset contains 112120 images in gray scale format which 1024 by 1024. There are 15 different classes and there is apossibility of 14 different diseases to be appeared in all ChestXray images. These kind of images make the problem as multi-class and multi-label. The class labels are NLP(Natural Language Processing) extracted with 90% labelling accuracy.  The size of the dataset is around 42GB which made it as a big data with multiple classes and multiple labels. 
 
+We have utilized different pre-trained models such as Resnet-50, Densenet-161, Inception-V1 and VGG-16. The chosen pre-trained model is trained from scratch in order to get the fine features of images. The first layer was replaced by 224 by 224 by 3 and the last layer was replaced with fully connected layer with 14 classes. Because of this multiple class and multiple labels problem the activation function is set to be sigmoid and the loss function is binary cross entropy. Due to overfitting, we have used dropout and added L1 and L2 regularization to the output layer. 
 
-### How to imporve your AUC 
-here is a good reference to follow in order to increase the accuracy 
-https://machinelearningmastery.com/improve-deep-learning-performance/
+## Environment
+- Python 2.7 or higher 
+- JDK 8 
+- Apache Spark 2.1.1  
+- Jupyter Notebook 4.1 or spark submit using CLI(Command Line Interface). 
+- BigDL 0.7.0 
+- Analytics zoo 0.4.0 
+
+## Hardware Infrastructure
+- Hadoop cluster with at least 4 nodes with driver memory 170GB and executor memory is 170GB.
+
+## Download and Install Analytics Zoo and BigDL 
+Follow the instruction given in [here](https://repo1.maven.org/maven2/com/intel/analytics/bigdl/dist-spark-2.1.1-scala-2.11.8-all/0.7.0/dist-spark-2.1.1-scala-2.11.8-all-0.7.0-dist.zip) to install and configure BigDL and for analytics zoo follow this [link](https://oss.sonatype.org/content/repositories/releases/com/intel/analytics/zoo/analytics-zoo-bigdl_0.7.1-spark_2.1.1/0.3.0/analytics-zoo-bigdl_0.7.1-spark_2.1.1-0.3.0-dist-all.zip). 
+
+## Run jupyter Notebook 
+- Run export SPARK_HOME = the root directory of Spark. (Ex: /opt/cloudera/parcels/SPARK2-2.1.0.cloudera2-1.cdh5.7.0.p0.171658/lib/spark2)
+- Run export ANALYTICS_ZOO_HOME=the folder where you extract the downloaded Analytics Zoo zip package. (Ex: /usr/lib/zoo)
+- Run the following bash command to start the jupyter notebook. Change parameter settings as you need,
+```bash
+$ANALYTICS_ZOO_HOME/bin/jupyter-with-zoo.sh  \
+    --master yarn \
+    --num-executors 4 \
+    --executor-cores 16 \
+    --driver-memory 170g \
+    --executor-memory 170g 
+```
+
+## Run spark-submit
+- Run export SPARK_HOME = the root directory of Spark. (Ex: /opt/cloudera/parcels/SPARK2-2.1.0.cloudera2-1.cdh5.7.0.p0.171658/lib/spark2)
+- Run export ANALYTICS_ZOO_HOME=the folder where you extract the downloaded Analytics Zoo zip package. (Ex: /usr/lib/zoo)
+- Run the following spark-submit command. Change parameter settings as you need,
+```bash	
+$ANALYTICS_ZOO_HOME/bin/spark-submit-with-zoo.sh \
+    --master yarn \
+    --deploy-mode cluster \
+    --num-executors 4 \
+    --executor-cores 8 \
+    --driver-memory 300g \
+    --executor-memory 300g \
+    path/to/python_file.py \
+    batch_size \
+    num_epochs \
+    path/to/pretrained model file \
+    path/to/dataset \ 
+    path/to/save the model
+```
+
