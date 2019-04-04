@@ -1,15 +1,13 @@
 ## Summary
-In this notebook, the transfer learning is utilized to predict common Thorax Disease Categories in chest X-ray which is available from NIH(National Institutes of Health). Download the dataset by from this [link](http://academictorrents.com/details/557481faacd824c83fbf57dcf7b6da9383b3235a). The dataset contains 112120 images in gray scale format which is in 1024 by 1024 resolution. There are 15 different classes and there is a possibility of 14 different diseases to be appeared in all ChestXray images. These kind of images make the problem as multi-class and multi-label. The class labels are NLP(Natural Language Processing) extracted with 90% labelling accuracy.  The size of the dataset is around 43GB which made it as a big data with multiple classes and multiple labels. 
-
-We have utilized different pre-trained models such as Resnet-50, Densenet-161, Inception-V1 and VGG-16. The chosen pre-trained model is trained from scratch in order to get the fine features of images. The first layer was replaced by 224 by 224 by 3 and the last layer was replaced with fully connected layer with 14 classes. Because of this multiple class and multiple labels problem the activation function is set to be sigmoid and the loss function is binary cross entropy. Due to overfitting, we have used dropout and added L1 and L2 regularization to the output layer. 
+In this notebook, we demonstrate how we can we can build an end to end deep learning pipeline on Spark leveraging the Analytics Zoo for an image processing problem. Distributed Spark worker nodes are used to train our deep learning model at scale. We used the [Chest Xray dataset](http://academictorrents.com/details/557481faacd824c83fbf57dcf7b6da9383b3235a) released by the National Health Institute to develop an AI models to diagnose pneumonia, emphysema, and other thoracic pathologies from chest x-rays. Using the Stanford University [CheXNet](https://stanfordmlgroup.github.io/projects/chexnet/) model as inspiration, we explore ways of developing accurate models for this problem on a distributed Spark cluster. We explore various neural network topologies to gain insight into what types of modelsneural networks scale well in parallel and reduceimprove training time from days to hours. 
 
 ## Environment
 - Python 2.7 or higher 
 - JDK 8 
-- Apache Spark 2.1.1  
+- Apache Spark 2.1.1 or higher
 - Jupyter Notebook 4.1 or spark submit using CLI(Command Line Interface). 
-- BigDL 0.7.0 
-- Analytics zoo 0.4.0 
+- BigDL 0.7.0 or higher 
+- Analytics zoo 0.4.0 or higher
 
 ## Hardware Infrastructure
 - Hadoop cluster with at least 4 nodes with driver memory 170GB and executor memory is 170GB.
