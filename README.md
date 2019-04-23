@@ -1,6 +1,8 @@
 ## Summary
 In this notebook, we demonstrate how we can we can build an end to end deep learning pipeline on Spark leveraging the Analytics Zoo for an image processing problem. Distributed Spark worker nodes are used to train our deep learning model at scale. We used the [Chest Xray dataset](http://academictorrents.com/details/557481faacd824c83fbf57dcf7b6da9383b3235a) released by the National Health Institute to develop an AI models to diagnose pneumonia, emphysema, and other thoracic pathologies from chest x-rays. Using the Stanford University [CheXNet](https://stanfordmlgroup.github.io/projects/chexnet/) model as inspiration, we explore ways of developing accurate models for this problem on a distributed Spark cluster. We explore various neural network topologies to gain insight into what types of modelsneural networks scale well in parallel and reduceimprove training time from days to hours. 
 
+Refer to the [white paper](https://www.dellemc.com/resources/en-us/asset/white-papers/solutions/h17686_hornet_wp.pdf) for more information on this study.
+
 ## Environment
 - Python 2.7 or higher 
 - JDK 8 
